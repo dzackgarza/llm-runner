@@ -72,6 +72,13 @@ def write_exact_echo_templates(tmp_path: Path, *, model_slug: str) -> tuple[Path
         textwrap.dedent(
             f"""
             ---
+            name: exact_echo
+            description: Live runner fixture with extra non-runner frontmatter
+            inputs:
+              - name: passphrase
+                required: true
+              - name: number
+                required: true
             kind: llm-run
             models:
               - {model_slug}

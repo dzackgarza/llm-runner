@@ -145,6 +145,8 @@ class ResponseTemplateSpec(StrictModel):
 class RunTemplateSpec(StrictModel):
     """Reserved runner frontmatter fields."""
 
+    model_config = ConfigDict(extra="ignore")
+
     kind: str | None = None
     models: list[str] = Field(min_length=1)
     system_template: TemplateReference | None = None
