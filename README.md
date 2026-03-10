@@ -9,12 +9,20 @@ direnv allow
 just setup
 ```
 
-Local configuration lives in `.envrc`:
+Local configuration lives in `.envrc` and inherits shared API keys from `~/.envrc`:
 
 ```bash
+source_up
 export PROMPTS_DIR="${PROMPTS_DIR:-$PWD/prompts}"
-# export GROQ_API_KEY="replace-me"
-# export OPENROUTER_API_KEY="replace-me"
+
+# Shared provider credentials come from ~/.envrc:
+# GROQ_API_KEY
+# OPENROUTER_API_KEY
+# NVIDIA_NIM_API_KEY
+# MISTRAL_API_KEY
+# CLOUDFLARE_API_KEY
+# CLOUDFLARE_ACCOUNT_ID
+# OLLAMA_API_KEY
 ```
 
 ## Direct Use
