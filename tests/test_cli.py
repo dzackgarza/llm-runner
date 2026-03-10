@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from typer.testing import CliRunner
 
 from llm_runner.cli import app, invoke_app, run_app
+from tests.live_support import (
+    DIFF_TEXT,
+    SYSTEM_PROMPT,
+    exact_echo_schema,
+    exact_echo_user_prompt,
+    live_model_slug,
+    write_exact_echo_templates,
+)
 
 
 runner = CliRunner()
@@ -22,76 +29,22 @@ def test_umbrella_help_lists_new_commands() -> None:
     assert "providers" in result.stdout
 
 
-def test_run_command_reads_json_from_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    response_payload = {
-        "run": {
-            "template_path": "/tmp/prompts/classify-ticket.md",
-            "model": "groq/llama-3.3-70b-versatile",
-            "messages": [
-                {"role": "user", "content": "Classify ticket 42."},
-            ],
-        },
-        "response": {
-            "model": "groq/llama-3.3-70b-versatile",
-            "raw_text": '{"tier":"B","reasoning":"uses a tool"}',
-            "structured": {"tier": "B", "reasoning": "uses a tool"},
-        },
-        "final_output": {
-            "text": None,
-            "data": {"tier": "B"},
-        },
-    }
-
-    async def fake_execute(request):
-        assert request.template.path == "prompts/classify-ticket.md"
-        from llm_runner.contracts import RunResponse
-
-        return RunResponse.model_validate(response_payload)
-
-    monkeypatch.setattr("llm_runner.cli.execute_run_request", fake_execute)
-
+def test_run_command_reads_json_from_stdin(tmp_path) -> None:
+    model_slug = live_model_slug()
+    passphrase = "PASS_CLI_RUN_20260310"
+    number = 17
+    template_path, diff_path = write_exact_echo_templates(
+        tmp_path, model_slug=model_slug
+    )
     result = runner.invoke(
         run_app,
         [],
         input=json.dumps(
             {
-                "template": {"path": "prompts/classify-ticket.md"},
-                "bindings": {"data": {"ticket": {"id": 42}}},
-            }
-        ),
-    )
-
-    assert result.exit_code == 0
-    output = json.loads(result.stdout)
-    assert output["run"]["model"] == "groq/llama-3.3-70b-versatile"
-    assert output["final_output"]["data"] == {"tier": "B"}
-
-
-def test_invoke_command_reads_json_from_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_execute(request):
-        assert request.models == ["groq/llama-3.3-70b-versatile"]
-        from llm_runner.contracts import InvokeResponse
-
-        return InvokeResponse(
-            model="groq/llama-3.3-70b-versatile",
-            raw_text='{"tier":"B","reasoning":"uses a tool"}',
-            structured={"tier": "B", "reasoning": "uses a tool"},
-        )
-
-    monkeypatch.setattr("llm_runner.cli.execute_invoke_request", fake_execute)
-
-    result = runner.invoke(
-        invoke_app,
-        [],
-        input=json.dumps(
-            {
-                "models": ["groq/llama-3.3-70b-versatile"],
-                "messages": [{"role": "user", "content": "Classify the ticket."}],
-                "output_schema": {
-                    "type": "object",
-                    "properties": {"tier": {"type": "string"}},
-                    "required": ["tier"],
-                    "additionalProperties": False,
+                "template": {"path": str(template_path)},
+                "bindings": {
+                    "data": {"passphrase": passphrase, "number": number},
+                    "text_files": [{"name": "diff", "path": str(diff_path)}],
                 },
             }
         ),
@@ -99,34 +52,58 @@ def test_invoke_command_reads_json_from_stdin(monkeypatch: pytest.MonkeyPatch) -
 
     assert result.exit_code == 0
     output = json.loads(result.stdout)
-    assert output["model"] == "groq/llama-3.3-70b-versatile"
-    assert output["structured"] == {"tier": "B", "reasoning": "uses a tool"}
+    assert output["run"]["model"] == model_slug
+    assert output["run"]["messages"][0] == {
+        "role": "system",
+        "content": SYSTEM_PROMPT,
+    }
+    assert DIFF_TEXT in output["run"]["messages"][1]["content"]
+    assert output["response"]["structured"] == {
+        "passphrase": passphrase,
+        "number": number,
+    }
+    assert output["final_output"]["data"] == {
+        "passphrase": passphrase,
+        "number": number,
+        "diff_present": True,
+    }
 
 
-def test_providers_list_command_emits_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_list_providers():
-        from llm_runner.contracts import ProviderInfo, ProvidersListResponse
+def test_invoke_command_reads_json_from_stdin() -> None:
+    model_slug = live_model_slug()
+    passphrase = "PASS_CLI_INVOKE_20260310"
+    number = 19
+    result = runner.invoke(
+        invoke_app,
+        [],
+        input=json.dumps(
+            {
+                "models": [model_slug],
+                "messages": [
+                    {"role": "system", "content": "Return only the requested JSON fields."},
+                    {
+                        "role": "user",
+                        "content": exact_echo_user_prompt(passphrase, number),
+                    },
+                ],
+                "output_schema": exact_echo_schema(),
+                "options": {"temperature": 0.0, "max_tokens": 80, "retries": 2},
+            }
+        ),
+    )
 
-        return ProvidersListResponse(
-            providers=[
-                ProviderInfo(
-                    name="groq",
-                    models=["groq/llama-3.3-70b-versatile"],
-                )
-            ]
-        )
+    assert result.exit_code == 0
+    output = json.loads(result.stdout)
+    assert output["model"] == model_slug
+    assert output["structured"] == {"passphrase": passphrase, "number": number}
+    assert json.loads(output["raw_text"]) == output["structured"]
 
-    monkeypatch.setattr("llm_runner.cli.list_providers_response", fake_list_providers)
 
+def test_providers_list_command_emits_json() -> None:
+    model_slug = live_model_slug()
     result = runner.invoke(app, ["providers", "list"])
 
     assert result.exit_code == 0
     output = json.loads(result.stdout)
-    assert output == {
-        "providers": [
-            {
-                "name": "groq",
-                "models": ["groq/llama-3.3-70b-versatile"],
-            }
-        ]
-    }
+    providers = {provider["name"]: provider["models"] for provider in output["providers"]}
+    assert model_slug in providers["groq"]

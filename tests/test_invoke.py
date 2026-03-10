@@ -9,77 +9,46 @@ import pytest
 
 from llm_runner.contracts import ChatMessage, InvokeOptions, InvokeRequest
 from llm_runner.invoke import (
-    ModelInvocationResult,
     StructuredOutputValidationError,
+    _structured_payload,
     invoke_request,
 )
+from tests.live_support import exact_echo_schema, exact_echo_user_prompt, live_model_slug
 
 
-def _output_schema() -> dict[str, object]:
-    return {
-        "type": "object",
-        "properties": {
-            "tier": {"type": "string"},
-            "reasoning": {"type": "string"},
-        },
-        "required": ["tier", "reasoning"],
-        "additionalProperties": False,
-    }
-
-
-def test_invoke_request_validates_structured_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_call_models(request: InvokeRequest) -> ModelInvocationResult:
-        assert request.models == ["groq/llama-3.3-70b-versatile"]
-        assert request.messages == [
-            ChatMessage(role="system", content="You are precise."),
-            ChatMessage(role="user", content="Classify the ticket."),
-        ]
-        return ModelInvocationResult(
-            model="groq/llama-3.3-70b-versatile",
-            output={"tier": "B", "reasoning": "uses a tool"},
-        )
-
-    monkeypatch.setattr("llm_runner.invoke._call_models", fake_call_models)
+def test_invoke_request_validates_structured_output() -> None:
+    model_slug = live_model_slug()
+    passphrase = "PASS_INVOKE_20260310"
+    number = 7
 
     response = asyncio.run(
         invoke_request(
             InvokeRequest(
-                models=["groq/llama-3.3-70b-versatile"],
+                models=[model_slug],
                 messages=[
-                    ChatMessage(role="system", content="You are precise."),
-                    ChatMessage(role="user", content="Classify the ticket."),
+                    ChatMessage(
+                        role="system",
+                        content="Return only the requested JSON fields.",
+                    ),
+                    ChatMessage(
+                        role="user",
+                        content=exact_echo_user_prompt(passphrase, number),
+                    ),
                 ],
-                output_schema=_output_schema(),
-                options=InvokeOptions(temperature=0.1, max_tokens=600, retries=4),
+                output_schema=exact_echo_schema(),
+                options=InvokeOptions(temperature=0.0, max_tokens=80, retries=2),
             )
         )
     )
 
-    assert response.model == "groq/llama-3.3-70b-versatile"
-    assert response.structured == {"tier": "B", "reasoning": "uses a tool"}
+    assert response.model == model_slug
+    assert response.structured == {"passphrase": passphrase, "number": number}
     assert json.loads(response.raw_text) == response.structured
 
 
-def test_invoke_request_rejects_schema_mismatch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_call_models(_: InvokeRequest) -> ModelInvocationResult:
-        return ModelInvocationResult(
-            model="groq/llama-3.3-70b-versatile",
-            output={"tier": "B"},
-        )
-
-    monkeypatch.setattr("llm_runner.invoke._call_models", fake_call_models)
-
-    with pytest.raises(StructuredOutputValidationError, match="reasoning"):
-        asyncio.run(
-            invoke_request(
-                InvokeRequest(
-                    models=["groq/llama-3.3-70b-versatile"],
-                    messages=[ChatMessage(role="user", content="Classify the ticket.")],
-                    output_schema=_output_schema(),
-                )
-            )
+def test_structured_payload_rejects_schema_mismatch() -> None:
+    with pytest.raises(StructuredOutputValidationError):
+        _structured_payload(
+            {"passphrase": "PASS_INCOMPLETE_20260310"},
+            exact_echo_schema(),
         )
