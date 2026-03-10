@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-runner"
+version = "0.1.0"
+description = "Template-driven LLM execution with JSON-first CLI interfaces"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "UNLICENSED" }
+authors = [{ name = "dzack" }]
+dependencies = [
+    "httpx>=0.28.1",
+    "jsonschema>=4.25.1",
+    "llm-templating-engine @ git+https://github.com/dzackgarza/llm-templating-engine.git",
+    "pydantic>=2.12.0",
+    "pydantic-ai>=1.67.0",
+    "typer>=0.16.0",
+]
+
+[project.scripts]
+llm-runner = "llm_runner.cli:main"
+llm-run = "llm_runner.cli:run_main"
+llm-invoke = "llm_runner.cli:invoke_main"
+llm-provider-list = "llm_runner.cli:providers_list_main"
+
+[dependency-groups]
+dev = ["pytest>=9.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/dzackgarza/llm-runner"
+Repository = "https://github.com/dzackgarza/llm-runner"
+Issues = "https://github.com/dzackgarza/llm-runner/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_runner"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
